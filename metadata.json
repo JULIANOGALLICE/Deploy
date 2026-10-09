@@ -1,0 +1,6 @@
+{
+  "name": "GitVPS Deploy - Automação de Deploy VPS",
+  "description": "Automatize a instalação e deploy contínuo de projetos Git em servidores VPS via SSH com seleção de portas, Webhooks e GitHub Actions.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

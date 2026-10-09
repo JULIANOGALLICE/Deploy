@@ -1,0 +1,235 @@
+{
+  "entities": {
+    "vpsServer": {
+      "title": "VpsServer",
+      "description": "Servidor VPS cadastrado para execucao de deploys remotos via SSH",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Identificador unico do servidor"
+        },
+        "name": {
+          "type": "string",
+          "description": "Nome do servidor",
+          "maxLength": 100
+        },
+        "host": {
+          "type": "string",
+          "description": "Host IP ou dominio da VPS",
+          "maxLength": 255
+        },
+        "ipAddress": {
+          "type": "string",
+          "description": "Endereco IP do servidor",
+          "maxLength": 100
+        },
+        "sshPort": {
+          "type": "number",
+          "description": "Porta do servico SSH"
+        },
+        "sshUser": {
+          "type": "string",
+          "description": "Usuario SSH",
+          "maxLength": 64
+        },
+        "authType": {
+          "type": "string",
+          "enum": ["key", "password"]
+        },
+        "sshKeyOrPassword": {
+          "type": "string",
+          "description": "Chave SSH ou senha",
+          "maxLength": 8192
+        },
+        "os": {
+          "type": "string",
+          "description": "Sistema Operacional",
+          "maxLength": 64
+        },
+        "status": {
+          "type": "string",
+          "enum": ["connected", "unreachable", "checking"]
+        },
+        "cpuCores": {
+          "type": "number"
+        },
+        "ramGb": {
+          "type": "number"
+        },
+        "diskGb": {
+          "type": "number"
+        },
+        "firewallUfwActive": {
+          "type": "boolean"
+        },
+        "notes": {
+          "type": "string",
+          "maxLength": 500
+        },
+        "createdAt": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "ownerId": {
+          "type": "string",
+          "maxLength": 128
+        }
+      },
+      "required": ["id", "name", "host", "sshPort", "sshUser"]
+    },
+    "deploymentProject": {
+      "title": "DeploymentProject",
+      "description": "Aplicacao Git cadastrada para deploy continuo",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "ID unico da aplicacao"
+        },
+        "vpsId": {
+          "type": "string",
+          "description": "ID do servidor VPS vinculado"
+        },
+        "name": {
+          "type": "string",
+          "maxLength": 100
+        },
+        "slug": {
+          "type": "string",
+          "maxLength": 100
+        },
+        "gitRepoUrl": {
+          "type": "string",
+          "maxLength": 500
+        },
+        "branch": {
+          "type": "string",
+          "maxLength": 100
+        },
+        "serverPath": {
+          "type": "string",
+          "maxLength": 500
+        },
+        "appPort": {
+          "type": "number"
+        },
+        "runtime": {
+          "type": "string",
+          "enum": ["node-pm2", "docker", "nginx-static", "systemd"]
+        },
+        "buildCommand": {
+          "type": "string",
+          "maxLength": 200
+        },
+        "startCommand": {
+          "type": "string",
+          "maxLength": 200
+        },
+        "domain": {
+          "type": "string",
+          "maxLength": 255
+        },
+        "enableHttps": {
+          "type": "boolean"
+        },
+        "webhookSecret": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "autoDeployOnPush": {
+          "type": "boolean"
+        },
+        "envVariables": {
+          "type": "array"
+        },
+        "status": {
+          "type": "string",
+          "enum": ["running", "stopped", "deploying", "failed"]
+        },
+        "lastDeployedAt": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "commitHash": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "commitMessage": {
+          "type": "string",
+          "maxLength": 500
+        },
+        "createdAt": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "ownerId": {
+          "type": "string",
+          "maxLength": 128
+        }
+      },
+      "required": ["id", "vpsId", "name", "gitRepoUrl", "branch", "appPort"]
+    },
+    "deploymentRecord": {
+      "title": "DeploymentRecord",
+      "description": "Registro de historico de deploy executado",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "projectId": {
+          "type": "string"
+        },
+        "vpsId": {
+          "type": "string"
+        },
+        "timestamp": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "status": {
+          "type": "string",
+          "enum": ["success", "failed", "in_progress"]
+        },
+        "commitHash": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "commitMessage": {
+          "type": "string",
+          "maxLength": 500
+        },
+        "durationSeconds": {
+          "type": "number"
+        },
+        "triggeredBy": {
+          "type": "string",
+          "enum": ["git_push", "manual", "webhook", "rollback"]
+        },
+        "logs": {
+          "type": "array"
+        },
+        "ownerId": {
+          "type": "string",
+          "maxLength": 128
+        }
+      },
+      "required": ["id", "projectId", "vpsId", "timestamp", "status"]
+    }
+  },
+  "firestore": {
+    "/servers/{serverId}": {
+      "schema": "vpsServer",
+      "description": "Colecao de servidores VPS cadastrados pelo usuario"
+    },
+    "/projects/{projectId}": {
+      "schema": "deploymentProject",
+      "description": "Colecao de aplicacoes Git cadastradas para deploy"
+    },
+    "/deployments/{deploymentId}": {
+      "schema": "deploymentRecord",
+      "description": "Historico de execucoes de deploys"
+    }
+  }
+}
