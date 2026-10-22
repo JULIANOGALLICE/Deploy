@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, GitBranch, Folder, Radio, Plus, Trash2, Globe, Cpu } from 'lucide-react';
+import { X, GitBranch, Folder, Radio, Plus, Trash2, Globe, Cpu, Bot, Sparkles } from 'lucide-react';
 import { DeploymentProject, EnvVariable, RuntimeType, VpsServer } from '../types/deploy';
 import { getProjectServer } from '../utils/serverMatcher';
 
@@ -36,6 +36,7 @@ export const ProjectModal: React.FC<ProjectModalProps> = ({
   const [domain, setDomain] = useState(projectToEdit?.domain || '');
   const [enableHttps, setEnableHttps] = useState(projectToEdit?.enableHttps ?? true);
   const [autoDeployOnPush, setAutoDeployOnPush] = useState(projectToEdit?.autoDeployOnPush ?? true);
+  const [enableAiAutoFix, setEnableAiAutoFix] = useState(projectToEdit?.enableAiAutoFix ?? true);
   const [githubToken, setGithubToken] = useState(projectToEdit?.githubToken || '');
   const [showGitHelp, setShowGitHelp] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -66,6 +67,7 @@ export const ProjectModal: React.FC<ProjectModalProps> = ({
       setDomain(projectToEdit.domain || '');
       setEnableHttps(projectToEdit.enableHttps ?? true);
       setAutoDeployOnPush(projectToEdit.autoDeployOnPush ?? true);
+      setEnableAiAutoFix(projectToEdit.enableAiAutoFix ?? true);
       setGithubToken(projectToEdit.githubToken || '');
       setEnvVariables(
         projectToEdit.envVariables && projectToEdit.envVariables.length > 0
@@ -94,6 +96,7 @@ export const ProjectModal: React.FC<ProjectModalProps> = ({
       setDomain('');
       setEnableHttps(true);
       setAutoDeployOnPush(true);
+      setEnableAiAutoFix(true);
       setGithubToken('');
       setEnvVariables([
         { key: 'NODE_ENV', value: 'production', isSecret: false },
@@ -189,6 +192,7 @@ export const ProjectModal: React.FC<ProjectModalProps> = ({
         enableHttps,
         webhookSecret: projectToEdit?.webhookSecret || randomSecret,
         autoDeployOnPush,
+        enableAiAutoFix,
         githubToken: githubToken.trim() || '',
         envVariables,
         status: projectToEdit?.status || 'running',
@@ -502,6 +506,42 @@ git push -u origin main`}
                 <span>Deploy automático a cada Push no GitHub (CI/CD)</span>
               </label>
             </div>
+          </div>
+
+          {/* Autocorreção Inteligente com IA (AI Self-Healing) */}
+          <div className="p-3.5 bg-gradient-to-r from-purple-950/40 via-slate-900 to-slate-950 border border-purple-500/35 rounded-xl space-y-2">
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-lg bg-purple-500/20 border border-purple-500/40 flex items-center justify-center text-purple-300 shrink-0">
+                  <Bot className="w-4 h-4" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-1.5 font-semibold text-xs text-white">
+                    <span>Inteligência Artificial no Deploy (AI Self-Healing)</span>
+                    <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-purple-500/25 text-purple-200 border border-purple-500/40">
+                      Gemini 3.8 Flash
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-400">
+                    Acompanha o terminal em tempo real e corrige automaticamente erros na VPS
+                  </p>
+                </div>
+              </div>
+
+              <label className="relative inline-flex items-center cursor-pointer shrink-0">
+                <input
+                  type="checkbox"
+                  checked={enableAiAutoFix}
+                  onChange={(e) => setEnableAiAutoFix(e.target.checked)}
+                  className="sr-only peer"
+                />
+                <div className="w-9 h-5 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-purple-600"></div>
+              </label>
+            </div>
+
+            <p className="text-[11px] text-slate-300 leading-relaxed border-t border-purple-900/40 pt-2">
+              💡 <strong>Como funciona:</strong> Se ocorrer qualquer falha durante compilação Vite/Rollup, pacotes faltando (<code className="text-purple-300">react-is</code>, <code className="text-purple-300">make</code>), conflitos de <code className="text-purple-300">npm peer dependencies</code> ou porta ocupada (<code className="text-purple-300">fuser</code>), a IA diagnostica o terminal e executa comandos específicos de reparo direto no servidor, mantendo um <strong>log separado auditável</strong> de todas as correções.
+            </p>
           </div>
 
           {/* Variáveis de Ambiente (.env) */}

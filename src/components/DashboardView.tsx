@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Server, GitBranch, Play, CheckCircle2, AlertCircle, Clock, ShieldCheck, ArrowUpRight, Cpu, Lock, Trash2, ExternalLink, Square, RefreshCw, Terminal, FileText, ChevronRight } from 'lucide-react';
+import { Server, GitBranch, Play, CheckCircle2, AlertCircle, Clock, ShieldCheck, ArrowUpRight, Cpu, Lock, Trash2, ExternalLink, Square, RefreshCw, Terminal, FileText, ChevronRight, Bot, Sparkles } from 'lucide-react';
 import { DeploymentProject, DeploymentRecord, VpsServer } from '../types/deploy';
 import { getProjectServer } from '../utils/serverMatcher';
 import { DeployLogsModal } from './DeployLogsModal';
@@ -325,6 +325,18 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                         >
                           {isSuccess ? 'Sucesso' : 'Falha'}
                         </span>
+                        {dep.aiFixed && (
+                          <span className="text-[10px] font-semibold px-1.5 py-0.2 rounded border bg-purple-500/15 text-purple-300 border-purple-500/30 flex items-center gap-1" title="Deploy recuperado e corrigido automaticamente pela IA Gemini 3.8 Flash">
+                            <Sparkles className="w-3 h-3 text-purple-400" />
+                            <span>Corrigido por IA</span>
+                          </span>
+                        )}
+                        {!dep.aiFixed && dep.aiLogs && dep.aiLogs.length > 0 && (
+                          <span className="text-[10px] font-mono px-1.5 py-0.2 rounded border bg-purple-500/15 text-purple-300 border-purple-500/30 flex items-center gap-1" title="Ações executadas pela IA">
+                            <Bot className="w-3 h-3 text-purple-400" />
+                            <span>IA ({dep.aiLogs.length})</span>
+                          </span>
+                        )}
                       </div>
                       <div className="text-slate-400 text-[11px] flex flex-wrap items-center gap-2 mt-0.5">
                         <span>{dep.commitMessage}</span>

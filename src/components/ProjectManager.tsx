@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { GitBranch, Play, RefreshCw, Square, Edit2, Trash2, ExternalLink, Settings2, Plus, Terminal, ShieldCheck, Lock, ShieldAlert, AlertTriangle } from 'lucide-react';
+import { GitBranch, Play, RefreshCw, Square, Edit2, Trash2, ExternalLink, Settings2, Plus, Terminal, ShieldCheck, Lock, ShieldAlert, AlertTriangle, Bot, Sparkles } from 'lucide-react';
 import { DeploymentProject, VpsServer } from '../types/deploy';
 import { ConfirmDeleteModal } from './ConfirmDeleteModal';
 import { getProjectServer } from '../utils/serverMatcher';
@@ -87,6 +87,17 @@ export const ProjectManager: React.FC<ProjectManagerProps> = ({
                       <span className="text-xs font-mono font-bold px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
                         Porta :{project.appPort}
                       </span>
+                      {project.enableAiAutoFix ? (
+                        <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-purple-500/20 text-purple-300 border border-purple-500/40 flex items-center gap-1" title="IA Gemini 3.8 Flash monitorando terminal para autocorreção automática na VPS">
+                          <Bot className="w-3 h-3 text-purple-400" />
+                          <span>IA Auto-Heal Ativa</span>
+                        </span>
+                      ) : (
+                        <span className="text-[10px] font-medium px-2 py-0.5 rounded bg-slate-800 text-slate-400 border border-slate-700 flex items-center gap-1" title="Autocorreção por IA desativada para este projeto">
+                          <Bot className="w-3 h-3 text-slate-500" />
+                          <span>IA Desativada</span>
+                        </span>
+                      )}
                       {project.enableHttps && (
                         <span className="text-[10px] font-medium px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 flex items-center gap-1">
                           <Lock className="w-3 h-3" />

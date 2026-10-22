@@ -43,6 +43,7 @@ export interface DeploymentProject {
   sslInstalledAt?: string;
   webhookSecret: string;
   autoDeployOnPush: boolean;
+  enableAiAutoFix?: boolean; // Autocorreção e monitoramento inteligente via IA no terminal
   githubToken?: string;
   envVariables: EnvVariable[];
   status: 'running' | 'stopped' | 'deploying' | 'failed';
@@ -62,4 +63,7 @@ export interface DeploymentRecord {
   durationSeconds: number;
   triggeredBy: 'git_push' | 'manual' | 'webhook' | 'rollback';
   logs: string[];
+  aiLogs?: string[]; // Log exclusivo e separado dos comandos e diagnósticos gerados pela IA
+  aiFixed?: boolean; // Se a IA corrigiu o deploy
+  aiDiagnosis?: string; // Diagnóstico explicativo gerado pela IA
 }

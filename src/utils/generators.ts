@@ -301,7 +301,10 @@ server.listen(PORT, '0.0.0.0', () => {
  * Gera a configuração Nginx Reverse Proxy para expor a porta na web
  */
 export function generateNginxConfig(vps: VpsServer, project: DeploymentProject): string {
-  const domain = project.domain || `${vps.host}`;
+  const vpsHost = (vps.host || vps.ipAddress || '177.153.67.226').trim();
+  const slug = (project.slug || project.name || 'app').toLowerCase().trim().replace(/[^a-z0-9_-]/g, '-');
+  const defaultNip = `${slug}.${vpsHost}.nip.io`;
+  const domain = project.domain || defaultNip;
   return `# Configuração Nginx para ${project.name}
 # Arquivo: /etc/nginx/sites-available/${project.slug}
 # Habilitar: sudo ln -s /etc/nginx/sites-available/${project.slug} /etc/nginx/sites-enabled/

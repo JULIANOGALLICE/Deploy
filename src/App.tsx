@@ -269,15 +269,22 @@ export default function App() {
     try {
       await saveDeploymentRecord(record);
       if (terminalProject) {
+        const isSuccess = record.status === 'success';
         const updatedProject = {
           ...terminalProject,
-          status: 'running' as const,
+          status: isSuccess ? ('running' as const) : ('failed' as const),
           lastDeployedAt: record.timestamp,
           commitHash: record.commitHash,
         };
         await saveDeploymentProject(updatedProject);
       }
-      showToast(`Deploy da aplicação finalizado e registrado no Firebase!`);
+      if (record.aiFixed) {
+        showToast(`🎉 Deploy recuperado e corrigido automaticamente pela IA!`);
+      } else if (record.status === 'success') {
+        showToast(`Deploy da aplicação finalizado com sucesso e registrado no Firebase!`);
+      } else {
+        showToast(`Deploy finalizado com erro na VPS. Consulte os logs no histórico.`, 'error');
+      }
     } catch (error) {
       console.error(error);
     }

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, Terminal, CheckCircle2, AlertTriangle, Loader2, Copy, Check, ExternalLink, HelpCircle, ShieldAlert, Cpu, GitBranch, ArrowRight, RefreshCw, ShieldCheck, Lock, Trash2 } from 'lucide-react';
+import { X, Terminal, CheckCircle2, AlertTriangle, Loader2, Copy, Check, ExternalLink, HelpCircle, ShieldAlert, Cpu, GitBranch, ArrowRight, RefreshCw, ShieldCheck, Lock, Trash2, Bot, Sparkles } from 'lucide-react';
 import { DeploymentProject, DeploymentRecord, VpsServer } from '../types/deploy';
 
 interface TerminalDeployModalProps {
@@ -24,12 +24,17 @@ export const TerminalDeployModal: React.FC<TerminalDeployModalProps> = ({
   onOpenUninstall,
 }) => {
   const [logs, setLogs] = useState<string[]>([]);
+  const [aiLogs, setAiLogs] = useState<string[]>([]);
+  const [aiFixed, setAiFixed] = useState(false);
+  const [aiDiagnosis, setAiDiagnosis] = useState<string | null>(null);
+  const [aiEnabled, setAiEnabled] = useState(project?.enableAiAutoFix ?? true);
+  const [copiedAi, setCopiedAi] = useState(false);
   const [isFinished, setIsFinished] = useState(false);
   const [isExecuting, setIsExecuting] = useState(false);
   const [copied, setCopied] = useState(false);
   const [copiedCommand, setCopiedCommand] = useState(false);
   const [copiedUfw, setCopiedUfw] = useState(false);
-  const [activeTab, setActiveTab] = useState<'terminal' | 'manual' | 'troubleshoot' | 'diagnose'>('terminal');
+  const [activeTab, setActiveTab] = useState<'terminal' | 'ai-logs' | 'manual' | 'troubleshoot' | 'diagnose'>('terminal');
   const [diagOutput, setDiagOutput] = useState('');
   const [isLoadingDiag, setIsLoadingDiag] = useState(false);
 
@@ -37,6 +42,12 @@ export const TerminalDeployModal: React.FC<TerminalDeployModalProps> = ({
   const [githubTokenInput, setGithubTokenInput] = useState(project?.githubToken || '');
   const [showPushGuide, setShowPushGuide] = useState(false);
   const [isSavingRepo, setIsSavingRepo] = useState(false);
+
+  useEffect(() => {
+    if (project) {
+      setAiEnabled(project.enableAiAutoFix ?? true);
+    }
+  }, [project?.id, project?.enableAiAutoFix]);
 
   useEffect(() => {
     if (project?.gitRepoUrl) {
@@ -87,6 +98,9 @@ export const TerminalDeployModal: React.FC<TerminalDeployModalProps> = ({
     setIsExecuting(true);
     setIsFinished(false);
     setLogs([]);
+    setAiLogs([]);
+    setAiFixed(false);
+    setAiDiagnosis(null);
 
     const activeRepoUrl = (overrideUrl || gitRepoInput || project.gitRepoUrl).trim();
     const activeToken = overrideToken !== undefined ? overrideToken : githubTokenInput;
@@ -104,6 +118,7 @@ export const TerminalDeployModal: React.FC<TerminalDeployModalProps> = ({
     pushLog(`🌐 Alvo: ${effectiveVps.sshUser}@${effectiveVps.host}:${effectiveVps.sshPort}`);
     pushLog(`📂 Repositório Git: ${activeRepoUrl}`);
     pushLog(`🔌 Porta configurada: ${appPort} (Host obrigatório: 0.0.0.0)`);
+    pushLog(aiEnabled ? `🤖 Auto-correção com IA (Gemini): ATIVADA` : `⚪ Auto-correção com IA: DESATIVADA`);
 
     try {
       const res = await fetch('/api/deploy-ssh', {
@@ -124,6 +139,7 @@ export const TerminalDeployModal: React.FC<TerminalDeployModalProps> = ({
           runtime: project.runtime || 'node-pm2',
           envVariables: project.envVariables || [],
           githubToken: activeToken,
+          enableAiAutoFix: aiEnabled,
         }),
       });
 
@@ -136,10 +152,26 @@ export const TerminalDeployModal: React.FC<TerminalDeployModalProps> = ({
         setLogs(data.logs);
       }
 
+      if (data.aiLogs && Array.isArray(data.aiLogs)) {
+        setAiLogs(data.aiLogs);
+      }
+
+      if (data.aiFixed) {
+        setAiFixed(true);
+      }
+
+      if (data.aiDiagnosis) {
+        setAiDiagnosis(data.aiDiagnosis);
+      }
+
       const durationSeconds = Math.max(1, Math.round((Date.now() - startTime) / 1000));
 
       if (data.success) {
-        pushLog(`✅ Deploy remoto concluído com SUCESSO na VPS ${effectiveVps.host}!`);
+        if (data.aiFixed) {
+          pushLog(`🎉 Deploy recuperado com SUCESSO pela IA na VPS ${effectiveVps.host}!`);
+        } else {
+          pushLog(`✅ Deploy remoto concluído com SUCESSO na VPS ${effectiveVps.host}!`);
+        }
         pushLog(`🟢 Acesse: http://${effectiveVps.host}:${appPort}`);
         setIsFinished(true);
         onDeployComplete({
@@ -149,10 +181,15 @@ export const TerminalDeployModal: React.FC<TerminalDeployModalProps> = ({
           timestamp: new Date().toISOString(),
           status: 'success',
           commitHash: Math.random().toString(16).substring(2, 9),
-          commitMessage: `Deploy via SSH na porta ${appPort}`,
+          commitMessage: data.aiFixed
+            ? `Deploy corrigido pela IA (Gemini) na porta ${appPort}`
+            : `Deploy via SSH na porta ${appPort}`,
           durationSeconds,
           triggeredBy: 'manual',
           logs: executionLogs,
+          aiLogs: data.aiLogs || [],
+          aiFixed: Boolean(data.aiFixed),
+          aiDiagnosis: data.aiDiagnosis,
         });
       } else {
         const errorMsg = data.message || 'A execução na VPS retornou erro.';
@@ -170,6 +207,9 @@ export const TerminalDeployModal: React.FC<TerminalDeployModalProps> = ({
           durationSeconds,
           triggeredBy: 'manual',
           logs: executionLogs,
+          aiLogs: data.aiLogs || [],
+          aiFixed: false,
+          aiDiagnosis: data.aiDiagnosis,
         });
       }
     } catch (err: any) {
@@ -188,6 +228,8 @@ export const TerminalDeployModal: React.FC<TerminalDeployModalProps> = ({
         durationSeconds,
         triggeredBy: 'manual',
         logs: localLogs,
+        aiLogs: [],
+        aiFixed: false,
       });
     } finally {
       setIsExecuting(false);
@@ -304,10 +346,10 @@ export const TerminalDeployModal: React.FC<TerminalDeployModalProps> = ({
         </div>
 
         {/* Navigation Tabs inside modal */}
-        <div className="flex border-b border-slate-800 bg-slate-900/60 px-4 text-xs">
+        <div className="flex border-b border-slate-800 bg-slate-900/60 px-4 text-xs overflow-x-auto">
           <button
             onClick={() => setActiveTab('terminal')}
-            className={`px-3 py-2.5 font-medium border-b-2 transition-colors cursor-pointer ${
+            className={`px-3 py-2.5 font-medium border-b-2 transition-colors cursor-pointer shrink-0 ${
               activeTab === 'terminal'
                 ? 'border-emerald-400 text-white'
                 : 'border-transparent text-slate-400 hover:text-slate-200'
@@ -316,8 +358,28 @@ export const TerminalDeployModal: React.FC<TerminalDeployModalProps> = ({
             Console SSH em Tempo Real
           </button>
           <button
+            onClick={() => setActiveTab('ai-logs')}
+            className={`px-3 py-2.5 font-medium border-b-2 transition-colors cursor-pointer flex items-center gap-1.5 shrink-0 ${
+              activeTab === 'ai-logs'
+                ? 'border-purple-400 text-purple-300 font-semibold'
+                : 'border-transparent text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <Bot className="w-3.5 h-3.5 text-purple-400" />
+            <span>Ações & Comandos da IA</span>
+            {aiLogs.length > 0 ? (
+              <span className="px-1.5 py-0.2 rounded-full bg-purple-500/25 text-purple-200 text-[10px] font-mono border border-purple-500/40">
+                {aiLogs.length}
+              </span>
+            ) : (
+              <span className={`px-1.5 py-0.2 rounded text-[10px] font-mono ${aiEnabled ? 'bg-purple-500/15 text-purple-300' : 'bg-slate-800 text-slate-500'}`}>
+                {aiEnabled ? 'Ativa' : 'Off'}
+              </span>
+            )}
+          </button>
+          <button
             onClick={() => setActiveTab('manual')}
-            className={`px-3 py-2.5 font-medium border-b-2 transition-colors cursor-pointer flex items-center gap-1.5 ${
+            className={`px-3 py-2.5 font-medium border-b-2 transition-colors cursor-pointer flex items-center gap-1.5 shrink-0 ${
               activeTab === 'manual'
                 ? 'border-emerald-400 text-white'
                 : 'border-transparent text-slate-400 hover:text-slate-200'
@@ -328,7 +390,7 @@ export const TerminalDeployModal: React.FC<TerminalDeployModalProps> = ({
           </button>
           <button
             onClick={() => setActiveTab('troubleshoot')}
-            className={`px-3 py-2.5 font-medium border-b-2 transition-colors cursor-pointer flex items-center gap-1 ${
+            className={`px-3 py-2.5 font-medium border-b-2 transition-colors cursor-pointer flex items-center gap-1 shrink-0 ${
               activeTab === 'troubleshoot'
                 ? 'border-rose-400 text-rose-300'
                 : 'border-transparent text-slate-400 hover:text-slate-200'
@@ -339,7 +401,7 @@ export const TerminalDeployModal: React.FC<TerminalDeployModalProps> = ({
           </button>
           <button
             onClick={handleRunDiagnose}
-            className={`px-3 py-2.5 font-medium border-b-2 transition-colors cursor-pointer flex items-center gap-1 ${
+            className={`px-3 py-2.5 font-medium border-b-2 transition-colors cursor-pointer flex items-center gap-1 shrink-0 ${
               activeTab === 'diagnose'
                 ? 'border-cyan-400 text-cyan-300'
                 : 'border-transparent text-slate-400 hover:text-slate-200'
@@ -433,8 +495,29 @@ git push -u origin main`}
           </div>
         )}
 
+        {/* AI Recovery Banner */}
+        {aiFixed && (
+          <div className="p-3.5 bg-gradient-to-r from-purple-950/60 to-slate-900 border-b border-purple-500/40 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-center gap-2.5 text-purple-200">
+              <div className="w-6 h-6 rounded bg-purple-500/20 border border-purple-500/40 flex items-center justify-center text-purple-300 shrink-0">
+                <Bot className="w-4 h-4" />
+              </div>
+              <div>
+                <span className="font-semibold block text-white">Falha detectada e auto-corrigida com sucesso pela IA!</span>
+                <span className="text-[11px] text-purple-300/90">A IA (Gemini 3.8 Flash) executou comandos de reparo no terminal da VPS e ativou o serviço na porta {appPort}.</span>
+              </div>
+            </div>
+            <button
+              onClick={() => setActiveTab('ai-logs')}
+              className="px-3 py-1.5 bg-purple-600 hover:bg-purple-500 text-white font-semibold rounded-lg text-xs transition-colors cursor-pointer shrink-0 shadow-sm"
+            >
+              Ver Comandos da IA ({aiLogs.length})
+            </button>
+          </div>
+        )}
+
         {/* Success Banner if finished with code 0 */}
-        {activeTab === 'terminal' && isFinished && logs.some(l => l.includes('DEPLOY CONCLUÍDO COM SUCESSO')) && (
+        {activeTab === 'terminal' && isFinished && logs.some(l => l.includes('DEPLOY CONCLUÍDO COM SUCESSO') || l.includes('Deploy executado no servidor com SUCESSO')) && (
           <div className="p-4 bg-emerald-500/15 border-b border-emerald-500/40 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div className="space-y-1">
               <div className="flex items-center gap-2 text-emerald-400 font-bold text-sm">
@@ -503,6 +586,119 @@ git push -u origin main`}
               <div className="flex items-center gap-2 text-emerald-400 py-1">
                 <Loader2 className="w-3.5 h-3.5 animate-spin" />
                 <span>Processando conexão e execução na VPS...</span>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Tab: Ações & Comandos da IA (Log Separado e Específico) */}
+        {activeTab === 'ai-logs' && (
+          <div className="p-4 bg-slate-950 flex-1 overflow-y-auto space-y-4 text-xs font-mono">
+            {/* Header Info Card */}
+            <div className="p-4 bg-purple-950/30 border border-purple-500/30 rounded-xl space-y-3 font-sans">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-lg bg-purple-500/20 border border-purple-500/40 flex items-center justify-center text-purple-300 shrink-0">
+                    <Bot className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-semibold text-white flex items-center gap-2">
+                      <span>IA Auto-Heal no Deploy VPS</span>
+                      <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-purple-500/20 text-purple-300 border border-purple-500/30">
+                        Gemini 3.8 Flash
+                      </span>
+                    </h4>
+                    <p className="text-xs text-slate-400">
+                      Acompanha a saída do terminal SSH e envia comandos de autocorreção caso ocorra algum erro
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-3 self-end sm:self-auto">
+                  <label className="flex items-center gap-2 cursor-pointer text-xs text-slate-300 select-none">
+                    <input
+                      type="checkbox"
+                      checked={aiEnabled}
+                      onChange={(e) => setAiEnabled(e.target.checked)}
+                      className="rounded border-slate-700 text-purple-600 focus:ring-0 cursor-pointer"
+                    />
+                    <span className={aiEnabled ? 'text-purple-300 font-medium' : 'text-slate-400'}>
+                      {aiEnabled ? 'Auto-Correção Ativada' : 'Auto-Correção Desativada'}
+                    </span>
+                  </label>
+
+                  {aiLogs.length > 0 && (
+                    <button
+                      onClick={() => {
+                        navigator.clipboard.writeText(aiLogs.join('\n'));
+                        setCopiedAi(true);
+                        setTimeout(() => setCopiedAi(false), 2000);
+                      }}
+                      className="px-2.5 py-1.5 bg-purple-500/20 hover:bg-purple-500/30 text-purple-200 border border-purple-500/40 rounded-lg text-xs transition-colors flex items-center gap-1.5 cursor-pointer font-sans"
+                    >
+                      {copiedAi ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+                      <span>{copiedAi ? 'Copiado!' : 'Copiar Comandos da IA'}</span>
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {aiDiagnosis && (
+                <div className="p-3 bg-purple-900/30 border border-purple-500/30 rounded-lg text-xs space-y-1">
+                  <strong className="text-purple-200 block">Diagnóstico da Falha:</strong>
+                  <p className="text-slate-200 text-[11px] leading-relaxed">{aiDiagnosis}</p>
+                </div>
+              )}
+            </div>
+
+            {/* Terminal dos comandos da IA */}
+            {aiLogs.length === 0 ? (
+              <div className="py-12 px-4 text-center space-y-3 font-sans border border-dashed border-slate-800 rounded-xl">
+                <div className="w-12 h-12 rounded-2xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-400 mx-auto">
+                  <Bot className="w-6 h-6" />
+                </div>
+                <h4 className="text-sm font-semibold text-white">
+                  {isExecuting
+                    ? 'Monitorando a execução do deploy...'
+                    : isFinished
+                    ? 'Nenhuma correção da IA foi necessária!'
+                    : 'Aguardando início do deploy'}
+                </h4>
+                <p className="text-xs text-slate-400 max-w-md mx-auto leading-relaxed">
+                  {isExecuting
+                    ? 'A IA está atenta a cada linha do terminal. Se ocorrer qualquer falha durante npm install, compilação Vite, portas presas ou ferramentas faltantes, os comandos de correção aparecerão aqui.'
+                    : isFinished
+                    ? 'O deploy rodou sem falhas que exigissem comandos corretivos da IA.'
+                    : 'Quando você disparar o deploy, se houver falhas técnicas no servidor, a IA diagnosticará o erro e executará comandos de correção automaticamente.'}
+                </p>
+              </div>
+            ) : (
+              <div className="p-4 bg-slate-900 border border-slate-800 rounded-xl space-y-1 max-h-[420px] overflow-y-auto">
+                <div className="text-[11px] text-purple-300 font-sans font-semibold pb-2 border-b border-slate-800 flex items-center justify-between">
+                  <span>Log Exclusivo de Comandos e Ações da IA na VPS:</span>
+                  <span>{aiLogs.length} linha(s)</span>
+                </div>
+                {aiLogs.map((line, idx) => {
+                  const isCmd = line.includes('>') || line.includes('Executando') || line.includes('Comando IA');
+                  const isSuccess = line.includes('SUCESSO') || line.includes('online') || line.includes('AI_FIX_SUCCESS');
+                  const isDiag = line.includes('DIAGNÓSTICO') || line.includes('PLANO');
+                  const isErr = line.includes('Falha') || line.includes('Erro') || line.includes('[stderr]');
+
+                  let cls = 'text-slate-300';
+                  if (isDiag) cls = 'text-cyan-300 font-semibold';
+                  else if (isCmd) cls = 'text-purple-300 font-semibold bg-purple-500/10 px-1 rounded';
+                  else if (isSuccess) cls = 'text-emerald-300 font-semibold';
+                  else if (isErr) cls = 'text-rose-400';
+
+                  return (
+                    <div key={idx} className="flex items-start gap-2 hover:bg-slate-800/40 px-1 py-0.5 rounded text-[11px] leading-relaxed">
+                      <span className="text-slate-600 select-none text-[10px] w-6 text-right shrink-0">
+                        {idx + 1}
+                      </span>
+                      <span className={`break-all ${cls}`}>{line}</span>
+                    </div>
+                  );
+                })}
               </div>
             )}
           </div>

@@ -17,39 +17,8 @@ export const SslModal: React.FC<SslModalProps> = ({
   vps,
   onSslSuccess,
 }) => {
-  const [domain, setDomain] = useState(project?.domain || '');
-  const [email, setEmail] = useState('julianogallice@gmail.com');
-  const [certType, setCertType] = useState<'letsencrypt' | 'selfsigned'>('letsencrypt');
-  const [isExecuting, setIsExecuting] = useState(false);
-  const [logs, setLogs] = useState<string[]>([]);
-  const [isFinished, setIsFinished] = useState(false);
-  const [isSuccess, setIsSuccess] = useState(false);
-  const [copiedIp, setCopiedIp] = useState(false);
-  const [showDnsHelp, setShowDnsHelp] = useState(false);
-
-  useEffect(() => {
-    if (project) {
-      setDomain(project.domain || '');
-      if (
-        project.domain &&
-        !project.domain.includes('localhost') &&
-        !/^\d{1,3}\.\d{1,3}/.test(project.domain) &&
-        project.domain.includes('.')
-      ) {
-        setEmail(`admin@${project.domain.replace(/^https?:\/\//, '')}`);
-      } else {
-        setEmail('julianogallice@gmail.com');
-      }
-      setLogs([]);
-      setIsFinished(false);
-      setIsSuccess(false);
-    }
-  }, [project]);
-
-  if (!isOpen || !project) return null;
-
   const effectiveVps: VpsServer = vps || {
-    id: project.vpsId,
+    id: project?.vpsId || 'vps-default',
     name: 'Servidor VPS',
     host: '177.153.67.226',
     ipAddress: '177.153.67.226',
@@ -64,6 +33,63 @@ export const SslModal: React.FC<SslModalProps> = ({
     firewallUfwActive: true,
     createdAt: new Date().toISOString(),
   };
+
+  const vpsHost = (vps?.host || effectiveVps.host || '177.153.67.226').trim();
+  const projectSlug = (project?.slug || project?.name || 'app')
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9_-]/g, '-');
+  const autoNipDomain = `${projectSlug}.${vpsHost}.nip.io`;
+
+  const [domain, setDomain] = useState(autoNipDomain);
+  const [email, setEmail] = useState('julianogallice@gmail.com');
+  const [certType, setCertType] = useState<'letsencrypt' | 'selfsigned'>('letsencrypt');
+  const [isExecuting, setIsExecuting] = useState(false);
+  const [logs, setLogs] = useState<string[]>([]);
+  const [isFinished, setIsFinished] = useState(false);
+  const [isSuccess, setIsSuccess] = useState(false);
+  const [copiedIp, setCopiedIp] = useState(false);
+  const [showDnsHelp, setShowDnsHelp] = useState(false);
+
+  useEffect(() => {
+    if (project) {
+      const targetVpsHost = (vps?.host || effectiveVps.host || '177.153.67.226').trim();
+      const currentSlug = (project.slug || project.name || 'app')
+        .toLowerCase()
+        .trim()
+        .replace(/[^a-z0-9_-]/g, '-');
+      const expectedAutoNip = `${currentSlug}.${targetVpsHost}.nip.io`;
+
+      // Se o projeto já tem um domínio próprio salvo no banco que não seja um IP puro e nem localhost ou .nip.io sem o slug
+      const hasCustomDomain =
+        project.domain &&
+        project.domain !== targetVpsHost &&
+        project.domain !== `${targetVpsHost}.nip.io` &&
+        !project.domain.includes('localhost') &&
+        project.domain.includes('.');
+
+      if (hasCustomDomain) {
+        setDomain(project.domain!);
+        if (!/^\d{1,3}\.\d{1,3}/.test(project.domain!) && !project.domain!.includes('.nip.io')) {
+          setEmail(`admin@${project.domain!.replace(/^https?:\/\//, '')}`);
+        } else {
+          setEmail('julianogallice@gmail.com');
+        }
+      } else {
+        // AUTOMATICAMENTE coloca o nome do projeto na frente do nip.io!
+        // Exemplo: https://conversoribge.177.153.67.226.nip.io
+        setDomain(expectedAutoNip);
+        setEmail('julianogallice@gmail.com');
+      }
+
+      setCertType('letsencrypt');
+      setLogs([]);
+      setIsFinished(false);
+      setIsSuccess(false);
+    }
+  }, [project, vps]);
+
+  if (!isOpen || !project) return null;
 
   const handleCopyIp = () => {
     navigator.clipboard.writeText(effectiveVps.host);
@@ -80,6 +106,15 @@ export const SslModal: React.FC<SslModalProps> = ({
     e.preventDefault();
     if (!cleanDomain) return;
 
+    let targetDomain = cleanDomain;
+    // Se o usuário digitou nome.ip (ex: conversoribge.177.153.67.226), adiciona .nip.io automaticamente!
+    if (/^([a-zA-Z0-9_-]+)\.(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})$/.test(targetDomain)) {
+      targetDomain = `${targetDomain}.nip.io`;
+    } else if (/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(targetDomain) && certType === 'letsencrypt') {
+      // Se digitou apenas o IP puro (ex: 177.153.67.226), coloca o nome do projeto na frente do nip.io!
+      targetDomain = `${projectSlug}.${targetDomain}.nip.io`;
+    }
+
     setIsExecuting(true);
     setIsFinished(false);
     setIsSuccess(false);
@@ -90,9 +125,10 @@ export const SslModal: React.FC<SslModalProps> = ({
       setLogs((prev) => [...prev, `[${ts}] ${msg}`]);
     };
 
-    const effectiveType = isBareIp && certType === 'letsencrypt' ? 'selfsigned' : certType;
+    const isTargetBareIp = /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(targetDomain);
+    const effectiveType = isTargetBareIp && certType === 'letsencrypt' ? 'selfsigned' : certType;
 
-    pushLog(`🔒 Iniciando configuração de SSL para '${cleanDomain}'...`);
+    pushLog(`🔒 Iniciando configuração de SSL para '${targetDomain}'...`);
     pushLog(`📡 Servidor VPS: ${effectiveVps.sshUser}@${effectiveVps.host}:${effectiveVps.sshPort}`);
     pushLog(`🔌 Redirecionando HTTPS (Porta 443) -> Aplicação (Porta ${project.appPort})`);
     pushLog(`🛡️ Tipo de certificado: ${effectiveType === 'letsencrypt' ? "Let's Encrypt (Oficial & Gratuito)" : "Autoassinado OpenSSL"}`);
@@ -107,8 +143,8 @@ export const SslModal: React.FC<SslModalProps> = ({
           username: effectiveVps.sshUser,
           authType: effectiveVps.authType,
           passwordOrKey: effectiveVps.sshKeyOrPassword,
-          domain: cleanDomain,
-          email: email.trim() || 'admin@example.com',
+          domain: targetDomain,
+          email: email.trim() || 'julianogallice@gmail.com',
           appPort: project.appPort,
           slug: project.slug,
           certType: effectiveType,
@@ -124,13 +160,13 @@ export const SslModal: React.FC<SslModalProps> = ({
       setIsFinished(true);
       if (data.success) {
         setIsSuccess(true);
-        pushLog(`🎉 HTTPS ATIVO COM SUCESSO NA PORTA 443 EM: https://${cleanDomain}`);
-        pushLog(`👉 Acesse sem porta: https://${cleanDomain}`);
+        pushLog(`🎉 HTTPS ATIVO COM SUCESSO NA PORTA 443 EM: https://${targetDomain}`);
+        pushLog(`👉 Acesse sem porta: https://${targetDomain}`);
         pushLog(`⚠️ Não coloque :${project.appPort} na URL, pois a porta ${project.appPort} é HTTP simples.`);
 
         const updatedProject: DeploymentProject = {
           ...project,
-          domain: cleanDomain,
+          domain: targetDomain,
           enableHttps: true,
           sslType: (data.effectiveCertType as any) || effectiveType,
           sslInstalledAt: new Date().toISOString(),
@@ -258,7 +294,7 @@ export const SslModal: React.FC<SslModalProps> = ({
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-medium text-slate-300 mb-1">
-                    Domínio ou Subdomínio *
+                    Domínio ou Subdomínio SSL *
                   </label>
                   <div className="relative">
                     <Globe className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
@@ -267,9 +303,32 @@ export const SslModal: React.FC<SslModalProps> = ({
                       required
                       value={domain}
                       onChange={(e) => setDomain(e.target.value)}
-                      placeholder="ex: app.meusite.com.br ou 177.153.67.226.nip.io"
+                      placeholder={`ex: ${autoNipDomain}`}
                       className="w-full pl-9 pr-3 py-2 bg-slate-950 border border-slate-700 rounded-lg text-xs text-white font-mono placeholder:text-slate-500 focus:outline-none focus:border-emerald-500"
                     />
+                  </div>
+                  <div className="flex flex-wrap items-center gap-1.5 mt-2 text-[11px]">
+                    <span className="text-slate-400">Padrão com o nome da aplicação:</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setDomain(autoNipDomain);
+                        setEmail('julianogallice@gmail.com');
+                        setCertType('letsencrypt');
+                      }}
+                      className={`px-2 py-0.5 rounded text-[11px] font-mono border transition-colors cursor-pointer flex items-center gap-1.5 ${
+                        domain === autoNipDomain
+                          ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/50 font-semibold'
+                          : 'bg-slate-900 text-slate-400 border-slate-700 hover:text-white hover:border-slate-600'
+                      }`}
+                    >
+                      <span>🌟 {autoNipDomain}</span>
+                      {domain === autoNipDomain && (
+                        <span className="text-[10px] bg-emerald-500/30 text-emerald-200 px-1 py-0.2 rounded font-sans">
+                          Ativo
+                        </span>
+                      )}
+                    </button>
                   </div>
                 </div>
 

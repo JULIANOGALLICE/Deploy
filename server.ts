@@ -3,6 +3,7 @@ import { createServer as createViteServer } from 'vite';
 import { Client } from 'ssh2';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { analyzeTerminalLogsWithAi } from './src/services/aiDeployFixer';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -315,7 +316,15 @@ curl -s -I http://127.0.0.1:${appPort} || echo "Falha ao responder na porta ${ap
       return res.status(400).json({ success: false, message: 'Domínio ou IP é obrigatório para instalar o SSL.' });
     }
 
-    const cleanDomain = domain.trim().replace(/^https?:\/\//, '').replace(/\/.*$/, '');
+    let cleanDomain = domain.trim().replace(/^https?:\/\//, '').replace(/\/.*$/, '');
+    // Se o usuário informou apenas nome.ip (ex: conversoribge.177.153.67.226), adiciona .nip.io automaticamente
+    if (/^([a-zA-Z0-9_-]+)\.(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})$/.test(cleanDomain)) {
+      cleanDomain = `${cleanDomain}.nip.io`;
+    } else if (/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(cleanDomain) && slug && certType === 'letsencrypt') {
+      // Se for apenas IP puro no Let's Encrypt, coloca o nome do projeto na frente do nip.io
+      cleanDomain = `${slug}.${cleanDomain}.nip.io`;
+    }
+
     const isBareIp = /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(cleanDomain);
 
     let validEmail = (email || '').trim();
@@ -935,16 +944,26 @@ echo "🎉 LIMPEZA CONCLUÍDA! A VPS está pronta para novas instalações limpa
       runtime = 'node-pm2',
       envVariables = [],
       githubToken = '',
+      enableAiAutoFix,
     } = req.body;
+
+    const isAiEnabled = enableAiAutoFix !== undefined ? Boolean(enableAiAutoFix) : true;
 
     if (!host) {
       return res.status(400).json({ success: false, message: 'Host IP ou domínio é obrigatório.' });
     }
 
     const logs: string[] = [];
+    const aiLogs: string[] = [];
     const pushLog = (line: string) => {
       const ts = new Date().toLocaleTimeString();
       logs.push(`[${ts}] ${line}`);
+    };
+    const pushAiLog = (line: string) => {
+      const ts = new Date().toLocaleTimeString();
+      const msg = `[${ts}] ${line}`;
+      aiLogs.push(msg);
+      logs.push(`[${ts}] 🤖 [IA Self-Healing] ${line}`);
     };
 
     // Validação inteligente de URL do Repositório Git
@@ -989,6 +1008,7 @@ echo "🎉 LIMPEZA CONCLUÍDA! A VPS está pronta para novas instalações limpa
     }
 
     pushLog(`🔑 Iniciando conexão SSH com ${username}@${host}:${port}...`);
+    pushLog(isAiEnabled ? `🤖 Auto-correção com IA (Gemini 3.8 Flash): ATIVADA - Monitorando execução` : `⚪ Auto-correção com IA: DESATIVADA pelo usuário`);
 
     if (!passwordOrKey) {
       pushLog(`⚠️ Nenhuma senha ou chave SSH fornecida para conexão direta.`);
@@ -1244,14 +1264,121 @@ echo "🎉 DEPLOY CONCLUÍDO COM SUCESSO! Aplicação ativa em http://${host}:${
           lines.forEach((l) => pushLog(`[stderr] ${l}`));
         });
 
-        stream.on('close', (code: number) => {
+        stream.on('close', async (code: number) => {
           if (code === 0) {
             pushLog(`🎉 Deploy executado no servidor com SUCESSO (código de saída 0)!`);
             pushLog(`🟢 Aplicação online em http://${host}:${appPort}`);
-            safeReply(200, { success: true, logs });
+            safeReply(200, { success: true, logs, aiLogs, aiFixed: false });
+          } else if (isAiEnabled) {
+            pushAiLog(`⚠️ Falha detectada durante o deploy na VPS (código de saída ${code}).`);
+            pushAiLog(`🧠 Acionando Inteligência Artificial (Gemini 3.8 Flash) para analisar o terminal e autocorrige a aplicação...`);
+
+            try {
+              const aiAnalysis = await analyzeTerminalLogsWithAi({
+                logs,
+                slug,
+                appPort,
+                serverPath,
+                buildCommand,
+                runtime,
+              });
+
+              pushAiLog(`💡 DIAGNÓSTICO DA IA: ${aiAnalysis.diagnosis}`);
+              pushAiLog(`📋 PLANO DE CORREÇÃO: ${aiAnalysis.explanation}`);
+              pushAiLog(`⚡ Executando ${aiAnalysis.commands.length} comando(s) corretivo(s) no servidor via SSH:`);
+
+              aiAnalysis.commands.forEach((cmd, idx) => {
+                pushAiLog(`  ${idx + 1}. > ${cmd}`);
+              });
+
+              // Monta script corretivo com os comandos da IA
+              const fixBashScript = `
+set -e
+export PATH=$PATH:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:~/.nvm/versions/node/$(ls ~/.nvm/versions/node 2>/dev/null | tail -n 1)/bin
+cd "${serverPath}" 2>/dev/null || true
+
+${aiAnalysis.commands.join('\n')}
+
+# Verificação se o serviço está respondendo na porta ${appPort}
+sleep 2
+if curl -s -I "http://127.0.0.1:${appPort}" | grep -q "HTTP"; then
+  echo "AI_FIX_SUCCESS=true"
+else
+  # Tenta fallback via PM2 serve SPA se houver dist
+  if [ -d "dist" ] && [ -f "dist/index.html" ]; then
+    echo "AI_FALLBACK_SPA=true"
+    pm2 delete "${slug}" 2>/dev/null || true
+    pm2 serve dist "${appPort}" --name "${slug}" --spa
+    sleep 2
+    if curl -s -I "http://127.0.0.1:${appPort}" | grep -q "HTTP"; then
+      echo "AI_FIX_SUCCESS=true"
+    fi
+  fi
+fi
+pm2 save 2>/dev/null || true
+`;
+
+              conn.exec(fixBashScript, (fixErr, fixStream) => {
+                if (fixErr) {
+                  pushAiLog(`❌ Erro ao enviar comandos da IA para a VPS: ${fixErr.message}`);
+                  return safeReply(200, {
+                    success: false,
+                    logs,
+                    aiLogs,
+                    exitCode: code,
+                    aiFixed: false,
+                    aiDiagnosis: aiAnalysis.diagnosis,
+                  });
+                }
+
+                fixStream.on('data', (d: Buffer) => {
+                  const lines = d.toString().split('\n').filter(Boolean);
+                  lines.forEach((l) => {
+                    pushLog(`[IA-Terminal] ${l}`);
+                    pushAiLog(`> ${l}`);
+                  });
+                });
+
+                fixStream.stderr.on('data', (d: Buffer) => {
+                  const lines = d.toString().split('\n').filter(Boolean);
+                  lines.forEach((l) => {
+                    pushLog(`[IA-stderr] ${l}`);
+                    pushAiLog(`[stderr] ${l}`);
+                  });
+                });
+
+                fixStream.on('close', (fixCode: number) => {
+                  const fixSucceeded = fixCode === 0 || aiLogs.some((l) => l.includes('AI_FIX_SUCCESS=true'));
+                  if (fixSucceeded) {
+                    pushAiLog(`🎉 SUCESSO! A Inteligência Artificial corrigiu a aplicação e ela está respondendo na porta ${appPort}!`);
+                    pushLog(`🎉 [IA Self-Healing] Deploy recuperado com SUCESSO! Aplicação online em http://${host}:${appPort}`);
+                    safeReply(200, {
+                      success: true,
+                      logs,
+                      aiLogs,
+                      aiFixed: true,
+                      aiDiagnosis: aiAnalysis.diagnosis,
+                    });
+                  } else {
+                    pushAiLog(`⚠️ Os comandos da IA foram executados, mas a aplicação ainda necessita de ajustes.`);
+                    safeReply(200, {
+                      success: false,
+                      logs,
+                      aiLogs,
+                      aiFixed: false,
+                      aiDiagnosis: aiAnalysis.diagnosis,
+                      exitCode: fixCode,
+                    });
+                  }
+                });
+              });
+            } catch (aiErr: any) {
+              pushAiLog(`❌ Falha no módulo de IA: ${aiErr.message}`);
+              safeReply(200, { success: false, logs, aiLogs, exitCode: code, aiFixed: false });
+            }
           } else {
             pushLog(`⚠️ O script encerrou com código de retorno ${code}.`);
-            safeReply(200, { success: false, logs, exitCode: code });
+            safeReply(200, { success: false, logs, aiLogs, exitCode: code, aiFixed: false });
           }
         });
       });
